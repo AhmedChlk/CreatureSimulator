@@ -13,3 +13,17 @@ run:
 # Nettoyage
 clean:
 	rm -rf $(BUILD_DIR)
+
+# Sauvegarde Git
+# Usage: make save msg="Mon message"
+
+files = .
+save:
+	@git add $(files)
+	@git commit -m "$(msg)"
+	@git push
+	@echo "--- Commit $(GIT_VERSION) poussé ! ---"
+
+# Mise à jour
+pull:
+	git pull
