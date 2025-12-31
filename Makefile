@@ -1,5 +1,5 @@
-#(doit correspondre au add_executable du CMakeLists.txt)
-EXE = CreatureSimulator
+# Change le nom ici pour correspondre à ton CMakeLists.txt
+EXE = QuadPhysicsSim
 BUILD_DIR = build
 
 .PHONY: run clean
@@ -15,8 +15,6 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 # Sauvegarde Git
-# Usage: make save msg="Mon message"
-
 files = .
 save:
 	@git add $(files)
