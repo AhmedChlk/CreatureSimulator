@@ -18,6 +18,8 @@ add_executable(QuadPhysicsSim
     src/Population.cpp
     src/Creature.cpp
     src/Render.cpp
+    src/LimbSegment.cpp
+    src/Leg.cpp
 )
 
 target_include_directories(QuadPhysicsSim PRIVATE include)

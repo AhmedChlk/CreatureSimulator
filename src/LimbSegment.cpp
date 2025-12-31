@@ -1,7 +1,6 @@
 #include "LimbSegment.hpp"
 #include "PhysicsWorld.hpp"
 #include "DistanceConstraint.hpp"
-#include <memory>
 
 LimbSegment::LimbSegment(PhysicsWorld& world,
                          std::size_t a,
@@ -10,7 +9,7 @@ LimbSegment::LimbSegment(PhysicsWorld& world,
                          float stiffness)
     : m_a(a), m_b(b)
 {
-    world.addConstraint(
-        std::make_unique<DistanceConstraint>(a, b, restLength, stiffness)
-    );
+    // IMPORTANT: PhysicsWorld::addConstraint est une template
+    // => on appelle addConstraint<DistanceConstraint>(...)
+    world.addConstraint<DistanceConstraint>(a, b, restLength, stiffness);
 }

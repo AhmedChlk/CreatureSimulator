@@ -36,16 +36,14 @@ const std::vector<std::unique_ptr<Constraint>>& PhysicsWorld::constraints() cons
     return m_constraints;
 }
 
-// --- MOTEUR PHYSIQUE ROBUSTE (SUB-STEPPING) ---
 void PhysicsWorld::step(float dt, int /*solverIterations*/) {
-    // On divise le temps en 8 petites étapes pour éviter les explosions
     const int subSteps = 8;
     float subDt = dt / static_cast<float>(subSteps);
 
     for (int s = 0; s < subSteps; ++s) {
         integrate(subDt);
         solveGround(subDt);
-        solveConstraints(subDt, 1); // 1 itération par sub-step suffit souvent
+        solveConstraints(subDt, 1);
         updateVelocities(subDt);
     }
 }
@@ -54,41 +52,30 @@ void PhysicsWorld::integrate(float dt) {
     for (auto& p : m_points) {
         if (p.isFixed()) continue;
 
-        // Récupération des valeurs via les accesseurs
         sf::Vector2f pos = p.getPosition();
-        sf::Vector2f vel = p.velocity(); // ou getVelocity()
+        sf::Vector2f vel = p.velocity();
         float mass = p.mass();
         sf::Vector2f forces = p.getAccumulatedForce();
 
-        // F = ma => a = F/m
         sf::Vector2f accel = forces / mass;
-        
-        // v = v + a*dt
         vel += accel * dt;
-        
-        // p = p + v*dt
         pos += vel * dt;
 
-        // Mise à jour de l'objet via les setters
         p.setVelocity(vel);
         p.setPosition(pos);
 
-        // Reset des forces et réapplication de la gravité
         p.clearForces();
         p.addForce(m_gravity * mass);
     }
 }
 
 void PhysicsWorld::solveConstraints(float dt, int /*iterations*/) {
-    // Note: On suppose que tes contraintes ont une méthode relax() ou solve()
-    // Si tes contraintes héritent de 'Constraint', vérifie si la méthode s'appelle 'solve' ou 'relax'.
-    // Ici j'utilise solve(*this, dt) comme défini dans ton Constraint.hpp probable.
     for (auto& c : m_constraints) {
-        c->solve(*this, dt); 
+        c->solve(*this, dt);
     }
 }
 
-void PhysicsWorld::solveGround(float dt) {
+void PhysicsWorld::solveGround(float /*dt*/) {
     for (auto& p : m_points) {
         if (p.isFixed()) continue;
 
@@ -97,16 +84,16 @@ void PhysicsWorld::solveGround(float dt) {
 
         if (pos.y > m_groundY) {
             pos.y = m_groundY;
-            vel.y = 0.f; // Stop vertical
-            vel.x *= m_groundFriction; // Friction
-            
+            vel.y = 0.f;
+            vel.x *= m_groundFriction;
+
             p.setPosition(pos);
             p.setVelocity(vel);
         }
     }
 }
 
-void PhysicsWorld::updateVelocities(float dt) {
+void PhysicsWorld::updateVelocities(float /*dt*/) {
     for (auto& p : m_points) {
         sf::Vector2f vel = p.velocity();
         vel *= m_damping;

@@ -49,10 +49,8 @@ public:
     const std::vector<std::unique_ptr<Constraint>>& constraints() const;
 
     void step(float dt, int solverIterations = 10);
-    
-    // --- AJOUT ---
+
     void reset();
-    // -------------
 
 private:
     void integrate(float dt);
