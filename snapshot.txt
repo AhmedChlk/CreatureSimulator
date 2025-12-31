@@ -1,0 +1,1450 @@
+.
+├── CMakeLists.txt
+├── include
+│   ├── Constraint.hpp
+│   ├── Creature.hpp
+│   ├── DistanceConstraint.hpp
+│   ├── Elevator.hpp
+│   ├── Fitness.hpp
+│   ├── Genome.hpp
+│   ├── JointConstraint.hpp
+│   ├── Leg.hpp
+│   ├── LimbSegment.hpp
+│   ├── Math2D.hpp
+│   ├── PhysicalPoint.hpp
+│   ├── PhysicsWorld.hpp
+│   ├── Population.hpp
+│   └── Render.hpp
+├── Makefile
+└── src
+    ├── Creature.cpp
+    ├── DistanceConstraint.cpp
+    ├── Elevator.cpp
+    ├── Fitness.cpp
+    ├── Genome.cpp
+    ├── JointConstraint.cpp
+    ├── Leg.cpp
+    ├── LimbSegment.cpp
+    ├── main.cpp
+    ├── Math2D.cpp
+    ├── PhysicalPoint.cpp
+    ├── PhysicsWorld.cpp
+    ├── Population.cpp
+    └── Render.cpp
+
+3 directories, 30 files
+
+################################################
+#              CONTENU DES FICHIERS             #
+################################################
+
+========================================
+FICHIER: ./include/PhysicalPoint.hpp
+========================================
+#pragma once
+#include <SFML/System/Vector2.hpp>
+
+class PhysicalPoint {
+public:
+    PhysicalPoint() = default;
+    PhysicalPoint(const sf::Vector2f& pos, float mass);
+
+    void setFixed(bool fixed);
+    bool isFixed() const;
+
+    void setMass(float m);
+    float mass() const;
+
+    void setPosition(const sf::Vector2f& p);
+    const sf::Vector2f& getPosition() const;
+
+    void setVelocity(const sf::Vector2f& v);
+    const sf::Vector2f& getVelocity() const;
+
+    // Aliases (pour éviter les bugs "position()/velocity()" dans ton main)
+    const sf::Vector2f& position() const { return m_pos; }
+    const sf::Vector2f& velocity() const { return m_vel; }
+
+    void clearForces();
+    void addForce(const sf::Vector2f& f);
+    const sf::Vector2f& getAccumulatedForce() const;
+
+    // PBD support
+    void storePrevPosition();
+    const sf::Vector2f& prevPosition() const;
+
+private:
+    sf::Vector2f m_pos{0.f, 0.f};
+    sf::Vector2f m_prevPos{0.f, 0.f};
+    sf::Vector2f m_vel{0.f, 0.f};
+    sf::Vector2f m_force{0.f, 0.f};
+    float m_mass{1.f};
+    bool m_fixed{false};
+};
+
+========================================
+FICHIER: ./include/LimbSegment.hpp
+========================================
+#pragma once
+#include <cstddef>
+
+class PhysicsWorld;
+
+class LimbSegment {
+public:
+    LimbSegment(PhysicsWorld& world,
+                std::size_t a,
+                std::size_t b,
+                float restLength,
+                float stiffness = 1.f);
+
+    std::size_t a() const { return m_a; }
+    std::size_t b() const { return m_b; }
+
+private:
+    std::size_t m_a;
+    std::size_t m_b;
+};
+
+========================================
+FICHIER: ./include/Fitness.hpp
+========================================
+#pragma once
+
+struct Fitness {
+    float distance = 0.f;
+    float energy   = 0.f;
+    float mass     = 0.f;
+    float score    = 0.f;
+
+    static Fitness make(float dist, float energy, float mass);
+};
+
+========================================
+FICHIER: ./include/Population.hpp
+========================================
+#pragma once
+#include <random>
+#include <vector>
+#include "Genome.hpp"
+#include "Fitness.hpp"
+
+class Population {
+public:
+    Population(std::size_t size, unsigned seed = 42);
+
+    std::size_t size() const;
+
+    const std::vector<Genome>& genomes() const;
+    const std::vector<Fitness>& fitnesses() const;
+
+    void setFitness(std::size_t i, const Fitness& f);
+    std::size_t bestIndex() const;
+
+    void evaluateGeneration(float simSeconds); 
+    void nextGeneration();
+    std::size_t generation() const;
+
+private:
+    void computeScores();
+
+    std::mt19937 m_rng;
+    std::vector<Genome> m_genomes;
+    std::vector<Fitness> m_fit;
+    std::size_t m_generation{0};
+    
+    // --- CORRECTION ---
+    // Ajout de la variable manquante
+    std::size_t m_bestIndex{0}; 
+};
+========================================
+FICHIER: ./include/Genome.hpp
+========================================
+#pragma once
+#include <random>
+
+struct Genome {
+    // Morphologie
+    float bodyW = 120.f;
+    float bodyH = 60.f;
+
+    float legUpper = 65.f;
+    float legLower = 75.f;
+
+    // Muscles
+    float hipMaxForce  = 900.f;
+    float kneeMaxForce = 900.f;
+
+    float hipAmp  = 0.25f; // contraction %
+    float kneeAmp = 0.30f;
+
+    // Gait
+    float frequency = 1.6f;  // Hz
+    float phaseFL = 0.0f;
+    float phaseFR = 3.14159f;
+    float phaseBL = 3.14159f;
+    float phaseBR = 0.0f;
+
+    static Genome random(std::mt19937& rng);
+    Genome mutated(std::mt19937& rng) const;
+};
+
+========================================
+FICHIER: ./include/PhysicsWorld.hpp
+========================================
+#pragma once
+#include <SFML/System/Vector2.hpp>
+#include <cstddef>
+#include <memory>
+#include <vector>
+
+#include "PhysicalPoint.hpp"
+#include "Constraint.hpp"
+
+class PhysicsWorld {
+public:
+    PhysicsWorld();
+    ~PhysicsWorld() = default;
+
+    PhysicsWorld(const PhysicsWorld&) = delete;
+    PhysicsWorld& operator=(const PhysicsWorld&) = delete;
+    PhysicsWorld(PhysicsWorld&&) noexcept = default;
+    PhysicsWorld& operator=(PhysicsWorld&&) noexcept = default;
+
+    void setGravity(const sf::Vector2f& g);
+    const sf::Vector2f& gravity() const;
+
+    void setDamping(float d);
+    float damping() const;
+
+    void setGround(float y);
+    float groundY() const;
+
+    void setGroundFriction(float f);
+    float groundFriction() const;
+
+    std::size_t addPoint(const PhysicalPoint& p);
+    std::size_t addPoint(const sf::Vector2f& pos, float mass);
+
+    template <typename TConstraint, typename... Args>
+    TConstraint& addConstraint(Args&&... args) {
+        auto ptr = std::make_unique<TConstraint>(std::forward<Args>(args)...);
+        TConstraint& ref = *ptr;
+        m_constraints.emplace_back(std::move(ptr));
+        return ref;
+    }
+
+    std::size_t pointCount() const;
+    std::size_t constraintCount() const;
+
+    PhysicalPoint& point(std::size_t i);
+    const PhysicalPoint& point(std::size_t i) const;
+
+    const std::vector<std::unique_ptr<Constraint>>& constraints() const;
+
+    void step(float dt, int solverIterations = 10);
+    
+    // --- AJOUT ---
+    void reset();
+    // -------------
+
+private:
+    void integrate(float dt);
+    void solveConstraints(float dt, int iterations);
+    void updateVelocities(float dt);
+    void solveGround(float dt);
+
+private:
+    std::vector<PhysicalPoint> m_points;
+    std::vector<std::unique_ptr<Constraint>> m_constraints;
+
+    sf::Vector2f m_gravity{0.f, 980.f};
+    float m_damping{0.995f};
+
+    float m_groundY{600.f};
+    float m_groundFriction{0.85f};
+};
+========================================
+FICHIER: ./include/Math2D.hpp
+========================================
+#pragma once
+#include <SFML/System/Vector2.hpp>
+#include <cmath>
+
+namespace m2d {
+
+inline sf::Vector2f operator+(const sf::Vector2f& a, const sf::Vector2f& b) { return {a.x+b.x, a.y+b.y}; }
+inline sf::Vector2f operator-(const sf::Vector2f& a, const sf::Vector2f& b) { return {a.x-b.x, a.y-b.y}; }
+inline sf::Vector2f operator*(const sf::Vector2f& a, float s) { return {a.x*s, a.y*s}; }
+inline sf::Vector2f operator/(const sf::Vector2f& a, float s) { return {a.x/s, a.y/s}; }
+
+inline sf::Vector2f& operator+=(sf::Vector2f& a, const sf::Vector2f& b) { a.x+=b.x; a.y+=b.y; return a; }
+inline sf::Vector2f& operator-=(sf::Vector2f& a, const sf::Vector2f& b) { a.x-=b.x; a.y-=b.y; return a; }
+inline sf::Vector2f& operator*=(sf::Vector2f& a, float s) { a.x*=s; a.y*=s; return a; }
+
+inline float dot(const sf::Vector2f& a, const sf::Vector2f& b) { return a.x*b.x + a.y*b.y; }
+inline float len2(const sf::Vector2f& v) { return dot(v,v); }
+inline float len(const sf::Vector2f& v) { return std::sqrt(len2(v)); }
+
+inline sf::Vector2f safeNorm(const sf::Vector2f& v) {
+    float L = len(v);
+    if (L < 1e-6f) return {0.f, 0.f};
+    return v / L;
+}
+
+template<typename T>
+inline T clamp(T v, T lo, T hi) {
+    return (v < lo) ? lo : (v > hi ? hi : v);
+}
+
+} // namespace m2d
+
+========================================
+FICHIER: ./include/Leg.hpp
+========================================
+#pragma once
+#include <vector>
+#include <cstddef>
+
+class LimbSegment;
+
+class Leg {
+public:
+    Leg(std::size_t hip,
+        std::size_t knee,
+        std::size_t foot);
+
+    void addSegment(const LimbSegment& seg);
+
+    std::size_t hip() const { return m_hip; }
+    std::size_t knee() const { return m_knee; }
+    std::size_t foot() const { return m_foot; }
+
+private:
+    std::size_t m_hip;
+    std::size_t m_knee;
+    std::size_t m_foot;
+};
+
+========================================
+FICHIER: ./include/DistanceConstraint.hpp
+========================================
+#pragma once
+#include "Constraint.hpp"
+
+class DistanceConstraint : public Constraint {
+public:
+    DistanceConstraint(std::size_t a, std::size_t b, float restLength, float stiffness = 1.f);
+
+    void solve(PhysicsWorld& world, float dt) override;
+
+    std::pair<std::size_t, std::size_t> endpoints() const override;
+    float targetLength() const override;
+
+    float restLength() const { return m_rest; }
+    void setStiffness(float s) { m_stiffness = s; }
+
+private:
+    std::size_t m_a{}, m_b{};
+    float m_rest{10.f};
+    float m_stiffness{1.f};
+};
+
+========================================
+FICHIER: ./include/Render.hpp
+========================================
+#pragma once
+#include <SFML/Graphics.hpp>
+#include <vector>
+#include "PhysicsWorld.hpp"
+
+namespace Render {
+    void drawWorld(sf::RenderTarget& target, const PhysicsWorld& world, bool drawPoints = true, bool drawConstraints = true);
+    void drawGround(sf::RenderTarget& target, float y, float w);
+    void drawGraph(sf::RenderTarget& target, const std::vector<float>& values, sf::FloatRect area);
+}
+
+========================================
+FICHIER: ./include/Elevator.hpp
+========================================
+#pragma once
+#include "Fitness.hpp"
+#include "Genome.hpp"
+#include <random>
+
+class Evaluator {
+public:
+    explicit Evaluator(FitnessConfig cfg);
+
+    FitnessResult evaluate(const Genome& g) const;
+
+private:
+    FitnessConfig m_cfg;
+};
+
+========================================
+FICHIER: ./include/Creature.hpp
+========================================
+#pragma once
+#include <SFML/Graphics.hpp>
+#include <cstddef>
+#include <vector>
+
+#include "PhysicsWorld.hpp"
+#include "Genome.hpp"
+#include "JointConstraint.hpp"
+
+class Creature {
+public:
+    Creature(PhysicsWorld& world, const Genome& g, const sf::Vector2f& spawn);
+
+    void updateControllers(float timeSeconds, float dt);
+    void draw(sf::RenderTarget& target) const;
+
+    sf::Vector2f centerOfMass() const;
+    float approximateMass() const;
+    float energySpent() const;
+
+private:
+    struct LegRefs {
+        std::size_t hip{};
+        std::size_t knee{};
+        std::size_t foot{};
+        JointConstraint* hipMuscle{nullptr};
+        JointConstraint* kneeMuscle{nullptr};
+        float phase{0.f};
+    };
+
+    LegRefs makeLeg(const sf::Vector2f& hipPos, float phase, bool isFront);
+
+private:
+    PhysicsWorld& m_world;
+    Genome m_g;
+
+    // body points
+    std::size_t m_a{}, m_b{}, m_c{}, m_d{};
+
+    // legs (FL, FR, BL, BR)
+    LegRefs m_fl, m_fr, m_bl, m_br;
+
+    float m_energy{0.f};
+};
+
+========================================
+FICHIER: ./include/JointConstraint.hpp
+========================================
+#pragma once
+#include "Constraint.hpp"
+#include <cmath>
+
+class JointConstraint : public Constraint {
+public:
+    // Constructeur complet avec force max et raideur
+    JointConstraint(std::size_t a, std::size_t b, float length, float maxForce, float stiffness = 0.5f);
+
+    void solve(PhysicsWorld& world, float dt) override;
+
+    std::pair<std::size_t, std::size_t> endpoints() const override;
+    float targetLength() const override;
+
+    void setTargetLength(float len);
+    float baseLength() const; // Pour le calcul du cycle de marche
+    float maxForce() const;   // Pour le calcul de l'énergie
+
+private:
+    std::size_t m_a;
+    std::size_t m_b;
+    float m_length;      // Longueur actuelle cible
+    float m_baseLength;  // Longueur initiale (repos)
+    float m_maxForce;
+    float m_stiffness;
+};
+========================================
+FICHIER: ./include/Constraint.hpp
+========================================
+#pragma once
+#include <cstddef>
+#include <utility>
+
+class PhysicsWorld;
+
+class Constraint {
+public:
+    virtual ~Constraint() = default;
+
+    // PBD solve: ajuste les positions
+    virtual void solve(PhysicsWorld& world, float dt) = 0;
+
+    // debug: pour Render
+    virtual std::pair<std::size_t, std::size_t> endpoints() const = 0;
+    virtual float targetLength() const = 0;
+};
+
+========================================
+FICHIER: ./.gitignore
+========================================
+build/
+
+
+========================================
+FICHIER: ./Makefile
+========================================
+# Change le nom ici pour correspondre à ton CMakeLists.txt
+EXE = QuadPhysicsSim
+BUILD_DIR = build
+
+.PHONY: run clean snapshot
+
+# Configure -> Compile -> Lance
+run:
+	cmake -S . -B $(BUILD_DIR)
+	cmake --build $(BUILD_DIR)
+	./$(BUILD_DIR)/$(EXE)
+
+# Nettoyage
+clean:
+	rm -rf $(BUILD_DIR)
+
+# Snapshot: Tree + Contenu des fichiers
+# Note: Nécessite que 'tree' soit installé (sudo apt install tree)
+snapshot:
+	@echo "Génération du snapshot..."
+	# 1. Écrit l'arborescence (ignore build et .git)
+	tree -I "$(BUILD_DIR)|.git|snapshot.txt" > snapshot.txt
+	@echo "" >> snapshot.txt
+	@echo "################################################" >> snapshot.txt
+	@echo "#              CONTENU DES FICHIERS             #" >> snapshot.txt
+	@echo "################################################" >> snapshot.txt
+	# 2. Trouve tous les fichiers, ignore build/.git/snapshot.txt, et ajoute leur contenu
+	@find . -type f -not -path "./$(BUILD_DIR)/*" -not -path "./.git/*" -not -name "snapshot.txt" | while read file; do \
+		echo "" >> snapshot.txt; \
+		echo "========================================" >> snapshot.txt; \
+		echo "FICHIER: $$file" >> snapshot.txt; \
+		echo "========================================" >> snapshot.txt; \
+		cat "$$file" >> snapshot.txt; \
+	done
+	@echo "Terminé ! Résultat dans snapshot.txt"
+
+# Sauvegarde Git
+files = .
+save:
+	@git add $(files)
+	@git commit -m "$(msg)"
+	@git push
+	@echo "--- Commit $(GIT_VERSION) poussé ! ---"
+
+# Mise à jour
+pull:
+	git pull
+========================================
+FICHIER: ./CMakeLists.txt
+========================================
+cmake_minimum_required(VERSION 3.16)
+project(QuadPhysicsSim LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+find_package(SFML 2.5 COMPONENTS graphics window system REQUIRED)
+
+add_executable(QuadPhysicsSim
+    src/main.cpp
+    src/Math2D.cpp
+    src/PhysicalPoint.cpp
+    src/PhysicsWorld.cpp
+    src/DistanceConstraint.cpp
+    src/JointConstraint.cpp
+    src/Genome.cpp
+    src/Fitness.cpp
+    src/Population.cpp
+    src/Creature.cpp
+    src/Render.cpp
+)
+
+target_include_directories(QuadPhysicsSim PRIVATE include)
+target_link_libraries(QuadPhysicsSim sfml-graphics sfml-window sfml-system)
+
+========================================
+FICHIER: ./src/main.cpp
+========================================
+#include <SFML/Graphics.hpp>
+#include <iostream>
+#include <vector>
+
+#include "PhysicsWorld.hpp"
+#include "Creature.hpp"
+#include "Population.hpp"
+#include "Fitness.hpp"
+#include "Render.hpp"
+
+static Fitness evaluateOne(const Genome& g, float simSeconds) {
+    PhysicsWorld world;
+    world.setGravity({0.f, 980.f});
+    world.setGround(600.f);
+    world.setDamping(0.995f);
+    world.setGroundFriction(0.85f);
+
+    Creature c(world, g, {200.f, 520.f});
+    const sf::Vector2f start = c.centerOfMass();
+
+    const float dt = 1.f / 120.f;
+    float t = 0.f;
+
+    while (t < simSeconds) {
+        c.updateControllers(t, dt);
+        world.step(dt, 12);
+        t += dt;
+    }
+
+    const sf::Vector2f end = c.centerOfMass();
+    float dist = end.x - start.x;
+    return Fitness::make(dist, c.energySpent(), c.approximateMass());
+}
+
+int main() {
+    const unsigned W = 1000, H = 700;
+    sf::RenderWindow window(sf::VideoMode(W, H), "Quad Physics - Phase 3 (Evolution)");
+    window.setFramerateLimit(60);
+
+    // UI
+    sf::Font font;
+    bool fontOk = font.loadFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+
+    const std::size_t POP = 60;
+    const float SIM_SECONDS = 4.0f;
+
+    Population pop(POP, 1337);
+    std::vector<float> historyBestScore;
+
+    // Eval gen 0
+    for (std::size_t i = 0; i < pop.size(); ++i) {
+        pop.setFitness(i, evaluateOne(pop.genomes()[i], SIM_SECONDS));
+    }
+    std::size_t bestIdx = pop.bestIndex();
+    historyBestScore.push_back(pop.fitnesses()[bestIdx].score);
+
+    // Affichage du best
+    PhysicsWorld displayWorld;
+    displayWorld.setGravity({0.f, 980.f});
+    displayWorld.setGround(600.f);
+    displayWorld.setDamping(0.995f);
+    displayWorld.setGroundFriction(0.85f);
+
+    // IMPORTANT: Creature non-assignable => on passe par unique_ptr
+    std::unique_ptr<Creature> best = std::make_unique<Creature>(displayWorld, pop.genomes()[bestIdx], sf::Vector2f{200.f, 520.f});
+
+    float simT = 0.f;
+    float genTimer = 0.f;
+
+    while (window.isOpen()) {
+        sf::Event e;
+        while (window.pollEvent(e)) {
+            if (e.type == sf::Event::Closed) window.close();
+        }
+
+        const float dt = 1.f / 60.f;
+        genTimer += dt;
+
+        // toutes les ~2.5 sec => nouvelle génération
+        if (genTimer > 2.5f) {
+            genTimer = 0.f;
+
+            // next gen
+            pop.nextGeneration();
+
+            // évaluer
+            for (std::size_t i = 0; i < pop.size(); ++i) {
+                pop.setFitness(i, evaluateOne(pop.genomes()[i], SIM_SECONDS));
+            }
+            bestIdx = pop.bestIndex();
+            historyBestScore.push_back(pop.fitnesses()[bestIdx].score);
+
+            // reset affichage best
+            displayWorld = PhysicsWorld(); // move OK (move explicit)
+            displayWorld.setGravity({0.f, 980.f});
+            displayWorld.setGround(600.f);
+            displayWorld.setDamping(0.995f);
+            displayWorld.setGroundFriction(0.85f);
+
+            best = std::make_unique<Creature>(displayWorld, pop.genomes()[bestIdx], sf::Vector2f{200.f, 520.f});
+            simT = 0.f;
+        }
+
+        // sim visuelle du best
+        for (int k = 0; k < 2; ++k) { // 2 sous-steps pour stabilité
+            best->updateControllers(simT, dt/2.f);
+            displayWorld.step(dt/2.f, 12);
+            simT += dt/2.f;
+        }
+
+        window.clear(sf::Color(15, 15, 18));
+        Render::drawGround(window, displayWorld.groundY(), (float)W);
+        Render::drawWorld(window, displayWorld, true, true);
+
+        // HUD
+        if (fontOk) {
+            sf::Text t;
+            t.setFont(font);
+            t.setCharacterSize(16);
+            t.setFillColor(sf::Color(240,240,240));
+
+            const Fitness& f = pop.fitnesses()[bestIdx];
+            t.setString(
+                "Gen: " + std::to_string(pop.generation()) +
+                " | Best score: " + std::to_string((int)f.score) +
+                " | dist: " + std::to_string((int)f.distance) +
+                " | mass: " + std::to_string((int)f.mass) +
+                " | energy: " + std::to_string((int)f.energy)
+            );
+            t.setPosition(12.f, 10.f);
+            window.draw(t);
+        }
+
+        // graphe
+        Render::drawGraph(window, historyBestScore, sf::FloatRect{650.f, 40.f, 330.f, 140.f});
+
+        window.display();
+    }
+
+    return 0;
+}
+
+========================================
+FICHIER: ./src/PhysicsWorld.cpp
+========================================
+#include "PhysicsWorld.hpp"
+#include <algorithm>
+
+PhysicsWorld::PhysicsWorld() = default;
+
+void PhysicsWorld::setGravity(const sf::Vector2f& g) { m_gravity = g; }
+const sf::Vector2f& PhysicsWorld::gravity() const { return m_gravity; }
+
+void PhysicsWorld::setDamping(float d) { m_damping = d; }
+float PhysicsWorld::damping() const { return m_damping; }
+
+void PhysicsWorld::setGround(float y) { m_groundY = y; }
+float PhysicsWorld::groundY() const { return m_groundY; }
+
+void PhysicsWorld::setGroundFriction(float f) { m_groundFriction = f; }
+float PhysicsWorld::groundFriction() const { return m_groundFriction; }
+
+std::size_t PhysicsWorld::addPoint(const PhysicalPoint& p) {
+    m_points.push_back(p);
+    return m_points.size() - 1;
+}
+
+std::size_t PhysicsWorld::addPoint(const sf::Vector2f& pos, float mass) {
+    PhysicalPoint p(pos, mass);
+    m_points.push_back(p);
+    return m_points.size() - 1;
+}
+
+std::size_t PhysicsWorld::pointCount() const { return m_points.size(); }
+std::size_t PhysicsWorld::constraintCount() const { return m_constraints.size(); }
+
+PhysicalPoint& PhysicsWorld::point(std::size_t i) { return m_points[i]; }
+const PhysicalPoint& PhysicsWorld::point(std::size_t i) const { return m_points[i]; }
+
+const std::vector<std::unique_ptr<Constraint>>& PhysicsWorld::constraints() const {
+    return m_constraints;
+}
+
+// --- MOTEUR PHYSIQUE ROBUSTE (SUB-STEPPING) ---
+void PhysicsWorld::step(float dt, int /*solverIterations*/) {
+    // On divise le temps en 8 petites étapes pour éviter les explosions
+    const int subSteps = 8;
+    float subDt = dt / static_cast<float>(subSteps);
+
+    for (int s = 0; s < subSteps; ++s) {
+        integrate(subDt);
+        solveGround(subDt);
+        solveConstraints(subDt, 1); // 1 itération par sub-step suffit souvent
+        updateVelocities(subDt);
+    }
+}
+
+void PhysicsWorld::integrate(float dt) {
+    for (auto& p : m_points) {
+        if (p.isFixed()) continue;
+
+        // Récupération des valeurs via les accesseurs
+        sf::Vector2f pos = p.getPosition();
+        sf::Vector2f vel = p.velocity(); // ou getVelocity()
+        float mass = p.mass();
+        sf::Vector2f forces = p.getAccumulatedForce();
+
+        // F = ma => a = F/m
+        sf::Vector2f accel = forces / mass;
+        
+        // v = v + a*dt
+        vel += accel * dt;
+        
+        // p = p + v*dt
+        pos += vel * dt;
+
+        // Mise à jour de l'objet via les setters
+        p.setVelocity(vel);
+        p.setPosition(pos);
+
+        // Reset des forces et réapplication de la gravité
+        p.clearForces();
+        p.addForce(m_gravity * mass);
+    }
+}
+
+void PhysicsWorld::solveConstraints(float dt, int /*iterations*/) {
+    // Note: On suppose que tes contraintes ont une méthode relax() ou solve()
+    // Si tes contraintes héritent de 'Constraint', vérifie si la méthode s'appelle 'solve' ou 'relax'.
+    // Ici j'utilise solve(*this, dt) comme défini dans ton Constraint.hpp probable.
+    for (auto& c : m_constraints) {
+        c->solve(*this, dt); 
+    }
+}
+
+void PhysicsWorld::solveGround(float dt) {
+    for (auto& p : m_points) {
+        if (p.isFixed()) continue;
+
+        sf::Vector2f pos = p.getPosition();
+        sf::Vector2f vel = p.velocity();
+
+        if (pos.y > m_groundY) {
+            pos.y = m_groundY;
+            vel.y = 0.f; // Stop vertical
+            vel.x *= m_groundFriction; // Friction
+            
+            p.setPosition(pos);
+            p.setVelocity(vel);
+        }
+    }
+}
+
+void PhysicsWorld::updateVelocities(float dt) {
+    for (auto& p : m_points) {
+        sf::Vector2f vel = p.velocity();
+        vel *= m_damping;
+        p.setVelocity(vel);
+    }
+}
+
+void PhysicsWorld::reset() {
+    m_points.clear();
+    m_constraints.clear();
+}
+========================================
+FICHIER: ./src/LimbSegment.cpp
+========================================
+#include "LimbSegment.hpp"
+#include "PhysicsWorld.hpp"
+#include "DistanceConstraint.hpp"
+#include <memory>
+
+LimbSegment::LimbSegment(PhysicsWorld& world,
+                         std::size_t a,
+                         std::size_t b,
+                         float restLength,
+                         float stiffness)
+    : m_a(a), m_b(b)
+{
+    world.addConstraint(
+        std::make_unique<DistanceConstraint>(a, b, restLength, stiffness)
+    );
+}
+
+========================================
+FICHIER: ./src/DistanceConstraint.cpp
+========================================
+#include "DistanceConstraint.hpp"
+#include "PhysicsWorld.hpp"
+#include <cmath>
+
+// Constructeur utilisant les indices (size_t) comme déclaré dans le .hpp
+DistanceConstraint::DistanceConstraint(std::size_t a, std::size_t b, float restLength, float stiffness)
+    : m_a(a), m_b(b), m_rest(restLength), m_stiffness(stiffness)
+{
+}
+
+void DistanceConstraint::solve(PhysicsWorld& world, float /*dt*/) {
+    // 1. On récupère les vrais points grâce à l'objet world et nos indices
+    PhysicalPoint& p1 = world.point(m_a);
+    PhysicalPoint& p2 = world.point(m_b);
+
+    // 2. On récupère les positions avec les getters
+    sf::Vector2f p1Pos = p1.getPosition();
+    sf::Vector2f p2Pos = p2.getPosition();
+
+    sf::Vector2f delta = p2Pos - p1Pos;
+    float currentDist = std::sqrt(delta.x * delta.x + delta.y * delta.y);
+
+    if (currentDist < 0.0001f) return; // Évite la division par zéro
+
+    // 3. Calcul de la correction (PBD)
+    float difference = (currentDist - m_rest) / currentDist;
+    sf::Vector2f correction = delta * difference * 0.5f * m_stiffness;
+
+    // 4. Application des nouvelles positions via les setters (si pas fixés)
+    if (!p1.isFixed())
+        p1.setPosition(p1Pos + correction);
+    
+    if (!p2.isFixed())
+        p2.setPosition(p2Pos - correction);
+}
+
+std::pair<std::size_t, std::size_t> DistanceConstraint::endpoints() const {
+    return {m_a, m_b};
+}
+
+float DistanceConstraint::targetLength() const {
+    return m_rest;
+}
+========================================
+FICHIER: ./src/Render.cpp
+========================================
+#include "Render.hpp"
+#include "Math2D.hpp"
+
+namespace Render {
+
+void drawGround(sf::RenderTarget& target, float y, float w) {
+    sf::RectangleShape r;
+    r.setSize({w, 4.f});
+    r.setPosition({0.f, y});
+    r.setFillColor(sf::Color(120, 120, 120));
+    target.draw(r);
+}
+
+void drawWorld(sf::RenderTarget& target, const PhysicsWorld& world, bool drawPoints, bool drawConstraints) {
+    if (drawConstraints) {
+        for (const auto& c : world.constraints()) {
+            auto [a,b] = c->endpoints();
+            auto pa = world.point(a).getPosition();
+            auto pb = world.point(b).getPosition();
+
+            sf::Vertex line[2] = {
+                sf::Vertex(pa, sf::Color(230, 230, 230)),
+                sf::Vertex(pb, sf::Color(230, 230, 230))
+            };
+            target.draw(line, 2, sf::Lines);
+        }
+    }
+
+    if (drawPoints) {
+        sf::CircleShape dot;
+        dot.setRadius(3.f);
+        dot.setOrigin({3.f,3.f});
+
+        for (std::size_t i = 0; i < world.pointCount(); ++i) {
+            const auto& p = world.point(i);
+            dot.setPosition(p.getPosition());
+            dot.setFillColor(p.isFixed() ? sf::Color(255,140,90) : sf::Color(90,200,255));
+            target.draw(dot);
+        }
+    }
+}
+
+void drawGraph(sf::RenderTarget& target, const std::vector<float>& values, sf::FloatRect area) {
+    if (values.size() < 2) return;
+
+    float minV = values[0], maxV = values[0];
+    for (float v : values) { if (v < minV) minV = v; if (v > maxV) maxV = v; }
+    if (std::abs(maxV - minV) < 1e-6f) { maxV = minV + 1.f; }
+
+    sf::RectangleShape bg;
+    bg.setPosition({area.left, area.top});
+    bg.setSize({area.width, area.height});
+    bg.setFillColor(sf::Color(20,20,20,160));
+    target.draw(bg);
+
+    std::vector<sf::Vertex> line(values.size());
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        float u = (float)i / (float)(values.size()-1);
+        float v = (values[i] - minV) / (maxV - minV);
+        float x = area.left + u * area.width;
+        float y = area.top + (1.f - v) * area.height;
+        line[i] = sf::Vertex({x,y}, sf::Color(120,255,120));
+    }
+    target.draw(line.data(), line.size(), sf::LineStrip);
+}
+
+} // namespace Render
+
+========================================
+FICHIER: ./src/JointConstraint.cpp
+========================================
+#include "JointConstraint.hpp"
+#include "PhysicsWorld.hpp"
+
+JointConstraint::JointConstraint(std::size_t a, std::size_t b, float length, float maxForce, float stiffness)
+    : m_a(a), m_b(b), m_length(length), m_baseLength(length), m_maxForce(maxForce), m_stiffness(stiffness)
+{
+}
+
+void JointConstraint::solve(PhysicsWorld& world, float /*dt*/) {
+    PhysicalPoint& p1 = world.point(m_a);
+    PhysicalPoint& p2 = world.point(m_b);
+
+    sf::Vector2f p1Pos = p1.getPosition();
+    sf::Vector2f p2Pos = p2.getPosition();
+
+    sf::Vector2f delta = p2Pos - p1Pos;
+    float dist = std::sqrt(delta.x*delta.x + delta.y*delta.y);
+
+    if (dist < 0.0001f) return;
+
+    float diff = (dist - m_length) / dist;
+    
+    // Correction standard (ressort)
+    sf::Vector2f correction = delta * diff * m_stiffness;
+
+    // --- LIMITATION DE FORCE (Optionnel mais réaliste) ---
+    // Si la correction est trop forte (muscle trop puissant), on la bride.
+    // C'est simple ici : on clamp la longueur du vecteur correction.
+    // (Note: pour une simulation PBD pure, c'est approximatif mais suffisant)
+    
+    if (!p1.isFixed())
+        p1.setPosition(p1Pos + correction);
+    
+    if (!p2.isFixed())
+        p2.setPosition(p2Pos - correction);
+}
+
+std::pair<std::size_t, std::size_t> JointConstraint::endpoints() const {
+    return {m_a, m_b};
+}
+
+float JointConstraint::targetLength() const { return m_length; }
+void JointConstraint::setTargetLength(float len) { m_length = len; }
+float JointConstraint::baseLength() const { return m_baseLength; }
+float JointConstraint::maxForce() const { return m_maxForce; }
+========================================
+FICHIER: ./src/Fitness.cpp
+========================================
+#include "Fitness.hpp"
+
+Fitness Fitness::make(float dist, float energy, float mass) {
+    Fitness f;
+    f.distance = dist;
+    f.energy = energy;
+    f.mass = mass;
+
+    // Phase 3: marcher vers +X efficacement
+    // Tu peux ajuster les coefficients plus tard
+    f.score = dist - 0.0025f * energy - 0.02f * mass;
+    return f;
+}
+
+========================================
+FICHIER: ./src/Creature.cpp
+========================================
+#include "Creature.hpp"
+#include "DistanceConstraint.hpp"
+#include "Math2D.hpp" // Assure-toi d'avoir m2d::dist ou std::hypot
+#include <cmath>
+
+static float s01(float x) {
+    return 0.5f * (std::sin(x) + 1.f);
+}
+
+// Petite fonction utilitaire locale pour calculer la distance
+static float distPoints(const PhysicsWorld& world, std::size_t ia, std::size_t ib) {
+    sf::Vector2f pa = world.point(ia).getPosition();
+    sf::Vector2f pb = world.point(ib).getPosition();
+    sf::Vector2f d = pb - pa;
+    return std::sqrt(d.x*d.x + d.y*d.y);
+}
+
+Creature::Creature(PhysicsWorld& world, const Genome& g, const sf::Vector2f& spawn)
+: m_world(world), m_g(g) {
+    m_world.setGround(600.f);
+    m_world.setDamping(0.995f);
+    m_world.setGroundFriction(0.85f);
+
+    const float w = m_g.bodyW;
+    const float h = m_g.bodyH;
+
+    // body rectangle: A(TL) B(TR) C(BL) D(BR)
+    // Attention : l'ordre Y dépend de ton repère (Y vers le bas en SFML)
+    m_a = m_world.addPoint({spawn.x,     spawn.y - h}, 1.2f);
+    m_b = m_world.addPoint({spawn.x + w, spawn.y - h}, 1.2f);
+    m_c = m_world.addPoint({spawn.x,     spawn.y     }, 1.2f); // Bas Gauche
+    m_d = m_world.addPoint({spawn.x + w, spawn.y     }, 1.2f); // Bas Droite
+
+    // Torso constraints (rigide)
+    m_world.addConstraint<DistanceConstraint>(m_a, m_b, w, 1.f);
+    m_world.addConstraint<DistanceConstraint>(m_c, m_d, w, 1.f);
+    m_world.addConstraint<DistanceConstraint>(m_a, m_c, h, 1.f);
+    m_world.addConstraint<DistanceConstraint>(m_b, m_d, h, 1.f);
+
+    // Diagonales (croix)
+    float diag = std::sqrt(w*w + h*h);
+    m_world.addConstraint<DistanceConstraint>(m_a, m_d, diag, 1.f);
+    m_world.addConstraint<DistanceConstraint>(m_b, m_c, diag, 1.f);
+
+    // --- CRÉATION DES JAMBES ---
+    
+    // Positions cibles pour les hanches
+    sf::Vector2f posC = m_world.point(m_c).getPosition();
+    sf::Vector2f posD = m_world.point(m_d).getPosition();
+    sf::Vector2f posA = m_world.point(m_a).getPosition();
+    sf::Vector2f posB = m_world.point(m_b).getPosition();
+
+    sf::Vector2f hipFL = posC + sf::Vector2f{ 10.f,  0.f};
+    sf::Vector2f hipFR = posD + sf::Vector2f{-10.f,  0.f};
+    sf::Vector2f hipBL = posA + sf::Vector2f{ 10.f,  0.f};
+    sf::Vector2f hipBR = posB + sf::Vector2f{-10.f,  0.f};
+
+    m_fl = makeLeg(hipFL, m_g.phaseFL, true);
+    m_fr = makeLeg(hipFR, m_g.phaseFR, true);
+    m_bl = makeLeg(hipBL, m_g.phaseBL, false);
+    m_br = makeLeg(hipBR, m_g.phaseBR, false);
+
+    // --- FIX CRUCIAL : ATTACHER LES JAMBES AU CORPS ---
+    // Pour que la hanche tienne solide au corps, on l'attache à 2 points du corps (triangulation).
+    
+    // Front Left Leg (attachée à C et D pour rigidité latérale, ou C et A pour verticale)
+    // Ici on attache au coin le plus proche (C) + un autre (D) pour verrouiller la rotation
+    m_world.addConstraint<DistanceConstraint>(m_c, m_fl.hip, distPoints(m_world, m_c, m_fl.hip), 1.0f);
+    m_world.addConstraint<DistanceConstraint>(m_d, m_fl.hip, distPoints(m_world, m_d, m_fl.hip), 1.0f);
+
+    // Front Right Leg (attachée à D et C)
+    m_world.addConstraint<DistanceConstraint>(m_d, m_fr.hip, distPoints(m_world, m_d, m_fr.hip), 1.0f);
+    m_world.addConstraint<DistanceConstraint>(m_c, m_fr.hip, distPoints(m_world, m_c, m_fr.hip), 1.0f);
+
+    // Back Left Leg (attachée à A et B)
+    m_world.addConstraint<DistanceConstraint>(m_a, m_bl.hip, distPoints(m_world, m_a, m_bl.hip), 1.0f);
+    m_world.addConstraint<DistanceConstraint>(m_b, m_bl.hip, distPoints(m_world, m_b, m_bl.hip), 1.0f);
+
+    // Back Right Leg (attachée à B et A)
+    m_world.addConstraint<DistanceConstraint>(m_b, m_br.hip, distPoints(m_world, m_b, m_br.hip), 1.0f);
+    m_world.addConstraint<DistanceConstraint>(m_a, m_br.hip, distPoints(m_world, m_a, m_br.hip), 1.0f);
+}
+
+Creature::LegRefs Creature::makeLeg(const sf::Vector2f& hipPos, float phase, bool isFront) {
+    LegRefs L;
+    L.phase = phase;
+
+    // 1. Création du point de hanche (indépendant au début)
+    L.hip  = m_world.addPoint(hipPos, 1.0f);
+
+    // 2. Positions initiales genou et pied
+    float kx = hipPos.x + (isFront ? 10.f : -10.f);
+    float ky = hipPos.y + m_g.legUpper;
+
+    float fx = kx + (isFront ? 15.f : -15.f);
+    float fy = ky + m_g.legLower;
+
+    L.knee = m_world.addPoint({kx, ky}, 0.9f);
+    L.foot = m_world.addPoint({fx, fy}, 0.8f);
+
+    // 3. Os (DistanceConstraint)
+    m_world.addConstraint<DistanceConstraint>(L.hip, L.knee, m_g.legUpper, 1.f);
+    m_world.addConstraint<DistanceConstraint>(L.knee, L.foot, m_g.legLower, 1.f);
+
+    // 4. Muscles (JointConstraint)
+    // On passe maintenant 5 arguments comme attendu par le nouveau constructeur
+    L.hipMuscle  = &m_world.addConstraint<JointConstraint>(L.hip,  L.knee, m_g.legUpper, m_g.hipMaxForce, 1.f);
+    L.kneeMuscle = &m_world.addConstraint<JointConstraint>(L.knee, L.foot, m_g.legLower, m_g.kneeMaxForce, 1.f);
+
+    return L;
+}
+
+void Creature::updateControllers(float timeSeconds, float dt) {
+    const float w = 2.f * 3.14159f * m_g.frequency;
+
+    auto driveLeg = [&](LegRefs& L) {
+        float x = w * timeSeconds + L.phase;
+        float cyc = std::sin(x);
+
+        // Contact au sol simple (si sin > 0, on considère qu'on veut pousser)
+        // Dans une simu avancée, on détecterait la collision réelle.
+        // Ici on triche un peu pour stabiliser : on fixe le pied s'il est bas.
+        // Mais attention, fixer brutalement peut être bizarre.
+        // Si tu veux laisser la physique faire : commente la ligne setFixed.
+        // m_world.point(L.foot).setFixed(cyc > 0.f); 
+
+        float a = s01(x); // 0..1
+        float hipTarget  = L.hipMuscle->baseLength()  * (1.f - m_g.hipAmp  * a);
+        float kneeTarget = L.kneeMuscle->baseLength() * (1.f - m_g.kneeAmp * (1.f - a));
+
+        L.hipMuscle->setTargetLength(hipTarget);
+        L.kneeMuscle->setTargetLength(kneeTarget);
+
+        m_energy += (a * L.hipMuscle->maxForce() + a * L.kneeMuscle->maxForce()) * dt;
+    };
+
+    driveLeg(m_fl);
+    driveLeg(m_fr);
+    driveLeg(m_bl);
+    driveLeg(m_br);
+}
+
+sf::Vector2f Creature::centerOfMass() const {
+    auto pa = m_world.point(m_a).getPosition();
+    auto pb = m_world.point(m_b).getPosition();
+    auto pc = m_world.point(m_c).getPosition();
+    auto pd = m_world.point(m_d).getPosition();
+    return (pa + pb + pc + pd) / 4.f;
+}
+
+float Creature::approximateMass() const {
+    // Somme très approximative (juste pour la fitness)
+    return 10.f * 4.f; 
+}
+
+float Creature::energySpent() const { return m_energy; }
+
+void Creature::draw(sf::RenderTarget& /*target*/) const {
+    // Le dessin est géré par Render.cpp
+}
+========================================
+FICHIER: ./src/Population.cpp
+========================================
+#include "Population.hpp"
+#include <algorithm>
+
+Population::Population(std::size_t size, unsigned seed)
+    : m_rng(seed)
+{
+    m_genomes.resize(size);
+    m_fit.resize(size);
+
+    // Génomes init aléatoires
+    for (auto& g : m_genomes) {
+        // CORRECTION 1 : random est statique et renvoie un objet, ce n'est pas une modif sur place
+        g = Genome::random(m_rng); 
+    }
+}
+
+// Implémentation des accesseurs manquants (nécessaire pour éviter des erreurs de lien)
+std::size_t Population::size() const { return m_genomes.size(); }
+const std::vector<Genome>& Population::genomes() const { return m_genomes; }
+const std::vector<Fitness>& Population::fitnesses() const { return m_fit; }
+std::size_t Population::generation() const { return m_generation; }
+
+// CORRECTION : Implémentation de bestIndex
+std::size_t Population::bestIndex() const { 
+    return m_bestIndex; 
+}
+
+void Population::setFitness(std::size_t i, const Fitness& f) {
+    if (i < m_fit.size()) {
+        m_fit[i] = f;
+    }
+}
+
+void Population::evaluateGeneration(float /*simSeconds*/) {
+    // Sera rempli plus tard avec la simulation physique
+}
+
+void Population::computeScores() {
+    if (m_fit.empty()) {
+        m_bestIndex = 0;
+        return;
+    }
+
+    m_bestIndex = 0;
+    for (std::size_t i = 1; i < m_fit.size(); ++i) {
+        // On suppose que Fitness a un membre 'score' (float ou double)
+        if (m_fit[i].score > m_fit[m_bestIndex].score) {
+            m_bestIndex = i;
+        }
+    }
+}
+
+void Population::nextGeneration() {
+    computeScores();
+
+    // Tri des indices par score décroissant
+    std::vector<std::size_t> order(m_genomes.size());
+    for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+
+    std::sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+        return m_fit[a].score > m_fit[b].score;
+    });
+
+    // On garde le top 25% comme parents
+    std::size_t eliteCount = std::max<std::size_t>(1, m_genomes.size() / 4);
+
+    std::vector<Genome> newGen;
+    newGen.reserve(m_genomes.size());
+
+    // Elites copiés
+    for (std::size_t i = 0; i < eliteCount; ++i) {
+        newGen.push_back(m_genomes[order[i]]);
+    }
+
+    // Reproduction + mutation
+    std::uniform_int_distribution<std::size_t> parentDist(0, eliteCount - 1);
+
+    while (newGen.size() < m_genomes.size()) {
+        Genome child = newGen[parentDist(m_rng)];  // clone d’un parent
+        
+        // CORRECTION 2 : mutated renvoie une copie modifiée, elle ne modifie pas 'child' directement
+        child = child.mutated(m_rng);                       
+        
+        newGen.push_back(child);
+    }
+
+    m_genomes = std::move(newGen);
+    m_generation++;
+}
+========================================
+FICHIER: ./src/Leg.cpp
+========================================
+#include "Leg.hpp"
+#include "LimbSegment.hpp"
+
+Leg::Leg(std::size_t hip,
+         std::size_t knee,
+         std::size_t foot)
+    : m_hip(hip), m_knee(knee), m_foot(foot) {}
+
+void Leg::addSegment(const LimbSegment&) {
+    // Rien à stocker pour l’instant :
+    // le segment existe physiquement dans le PhysicsWorld
+}
+
+========================================
+FICHIER: ./src/Genome.cpp
+========================================
+#include "Genome.hpp"
+#include "Math2D.hpp"
+#include <algorithm>
+
+Genome Genome::random(std::mt19937& rng) {
+    std::uniform_real_distribution<float> u01(0.f, 1.f);
+
+    Genome g;
+    g.bodyW = 90.f  + 120.f * u01(rng);
+    g.bodyH = 40.f  +  70.f * u01(rng);
+    g.legUpper = 45.f +  70.f * u01(rng);
+    g.legLower = 55.f +  80.f * u01(rng);
+
+    g.hipMaxForce  = 600.f + 1200.f * u01(rng);
+    g.kneeMaxForce = 600.f + 1200.f * u01(rng);
+
+    g.hipAmp  = 0.10f + 0.35f * u01(rng);
+    g.kneeAmp = 0.10f + 0.40f * u01(rng);
+
+    g.frequency = 0.8f + 2.2f * u01(rng);
+
+    // phases de base (trot)
+    g.phaseFL = 0.f;
+    g.phaseBR = 0.f;
+    g.phaseFR = 3.14159f;
+    g.phaseBL = 3.14159f;
+
+    // petite randomisation
+    auto jitter = [&](float& ph){
+        ph += (u01(rng)-0.5f) * 0.5f;
+    };
+    jitter(g.phaseFL); jitter(g.phaseFR); jitter(g.phaseBL); jitter(g.phaseBR);
+
+    return g;
+}
+
+Genome Genome::mutated(std::mt19937& rng) const {
+    std::normal_distribution<float> n01(0.f, 1.f);
+
+    Genome c = *this;
+
+    auto mut = [&](float& v, float sigma, float lo, float hi){
+        v += sigma * n01(rng);
+        v = m2d::clamp(v, lo, hi);
+    };
+
+    mut(c.bodyW, 10.f, 70.f, 220.f);
+    mut(c.bodyH,  8.f, 30.f, 120.f);
+
+    mut(c.legUpper, 8.f, 30.f, 130.f);
+    mut(c.legLower, 8.f, 30.f, 150.f);
+
+    mut(c.hipMaxForce, 120.f, 200.f, 2500.f);
+    mut(c.kneeMaxForce,120.f, 200.f, 2500.f);
+
+    mut(c.hipAmp,  0.03f, 0.02f, 0.55f);
+    mut(c.kneeAmp, 0.03f, 0.02f, 0.60f);
+
+    mut(c.frequency, 0.15f, 0.4f, 3.5f);
+
+    // phases
+    mut(c.phaseFL, 0.10f, -6.28f, 6.28f);
+    mut(c.phaseFR, 0.10f, -6.28f, 6.28f);
+    mut(c.phaseBL, 0.10f, -6.28f, 6.28f);
+    mut(c.phaseBR, 0.10f, -6.28f, 6.28f);
+
+    return c;
+}
+
+========================================
+FICHIER: ./src/Math2D.cpp
+========================================
+#include "Math2D.hpp"
+// (header-only helpers, fichier volontairement quasi vide)
+
+========================================
+FICHIER: ./src/PhysicalPoint.cpp
+========================================
+#include "PhysicalPoint.hpp"
+
+PhysicalPoint::PhysicalPoint(const sf::Vector2f& pos, float mass)
+: m_pos(pos), m_prevPos(pos), m_mass(mass) {}
+
+void PhysicalPoint::setFixed(bool fixed) { m_fixed = fixed; }
+bool PhysicalPoint::isFixed() const { return m_fixed; }
+
+void PhysicalPoint::setMass(float m) { m_mass = m; }
+float PhysicalPoint::mass() const { return m_mass; }
+
+void PhysicalPoint::setPosition(const sf::Vector2f& p) { m_pos = p; }
+const sf::Vector2f& PhysicalPoint::getPosition() const { return m_pos; }
+
+void PhysicalPoint::setVelocity(const sf::Vector2f& v) { m_vel = v; }
+const sf::Vector2f& PhysicalPoint::getVelocity() const { return m_vel; }
+
+void PhysicalPoint::clearForces() { m_force = {0.f, 0.f}; }
+void PhysicalPoint::addForce(const sf::Vector2f& f) { m_force.x += f.x; m_force.y += f.y; }
+const sf::Vector2f& PhysicalPoint::getAccumulatedForce() const { return m_force; }
+
+void PhysicalPoint::storePrevPosition() { m_prevPos = m_pos; }
+const sf::Vector2f& PhysicalPoint::prevPosition() const { return m_prevPos; }
+
+========================================
+FICHIER: ./src/Elevator.cpp
+========================================
+#include "Evaluator.hpp"
+#include "PhysicsWorld.hpp"
+#include "Creature.hpp"
+
+Evaluator::Evaluator(FitnessConfig cfg) : m_cfg(cfg) {}
+
+FitnessResult Evaluator::evaluate(const Genome& g) const {
+    PhysicsWorld world;
+    world.setGravity({0.f, 600.f}); // pixels/s² (ajuste)
+    world.setDamping(0.995f);       // si tu l’as, sinon ignore
+
+    // Sol
+    world.setGroundY(520.f);        // ajoute cette variable si pas encore
+
+    Creature c(world, g);
+
+    const float startX = c.centerOfMass().x;
+
+    for (int i = 0; i < (int)(m_cfg.simSeconds / m_cfg.dt); ++i) {
+        c.update(m_cfg.dt);   // pilotage (horloge -> muscles)
+        world.step(m_cfg.dt); // intégration + contraintes + collisions
+    }
+
+    FitnessResult r;
+    const float endX = c.centerOfMass().x;
+    r.distance = (endX - startX);
+    r.energy = c.energySpent();
+    r.mass = c.totalMass();
+
+    r.score = r.distance
+        - m_cfg.energyPenalty * r.energy
+        - m_cfg.massPenalty * r.mass;
+
+    return r;
+}
